@@ -1,0 +1,152 @@
+#include <Wire.h>
+
+const int MPU6050_ADDR = 0x68;   // I2C address of the MPU-6050
+const float accelScale = 16384.0; // Scale factor for accelerometer at +/- 2g
+const float g = 9.80665;         // Acceleration due to gravity in m/s²
+
+int16_t AcX, AcY, AcZ;
+int valvePin = 7;                 // Pin connected to the base of the transistor
+
+bool valveOpen = false;           // Flag to track valve state
+unsigned long valveOpenTime = 0;  // Timestamp when valve was opened
+const unsigned long debounceDelay = 200; // Debounce delay in milliseconds
+
+//SMS
+
+#include <WiFiS3.h>
+
+const char ssid[] = "iPhone Niklas";  // change your network SSID (name)
+const char pass[] = "Okokokok";   // change your network password (use for WPA, or use as key for WEP)
+
+WiFiClient client;
+int status = WL_IDLE_STATUS;
+
+int HTTP_PORT = 80;
+String HTTP_METHOD = "GET";
+char HOST_NAME[] = "maker.ifttt.com";
+String PATH_NAME = "/trigger/falldetection/with/key/d6vRKt_CigvwJM0djyW5Lz";  // change your Webhooks key
+String queryString = "?value1=falldetection";                                  // adjust the query string format
+
+
+void setup() {
+  Wire.begin();
+  Serial.begin(9600);
+  pinMode(valvePin, OUTPUT);
+  
+  // Initialize the MPU6050
+  Wire.beginTransmission(MPU6050_ADDR);
+  Wire.write(0x6B);  // PWR_MGMT_1 register
+  Wire.write(0);     // Set to zero (wakes up the MPU-6050)
+  Wire.endTransmission(true);
+}
+
+void loop() {
+  // Read accelerometer data
+  Wire.beginTransmission(MPU6050_ADDR);
+  Wire.write(0x3B);  // Starting register for accelerometer data
+  Wire.endTransmission(false);
+  Wire.requestFrom(MPU6050_ADDR, 6, true);  // Request a total of 6 registers
+
+  AcX = Wire.read() << 8 | Wire.read();  // ACCEL_XOUT_H & ACCEL_XOUT_L
+  AcY = Wire.read() << 8 | Wire.read();  // ACCEL_YOUT_H & ACCEL_YOUT_L
+  AcZ = Wire.read() << 8 | Wire.read();  // ACCEL_ZOUT_H & ACCEL_ZOUT_L
+
+  // Convert raw X-axis value to acceleration in g
+  float AcX_g = AcX / accelScale;
+
+  // Convert acceleration from g to m/s²
+  float AcX_ms2 = AcX_g * g;
+
+  // Print X-axis acceleration for plotting
+  Serial.println(AcX_ms2);
+
+  // Check for negative acceleration indicating a potential fall
+  if (AcX_ms2 < -18 && !valveOpen) {
+    // Check debounce delay
+    if (millis() - valveOpenTime >= debounceDelay) {
+      openValve();
+
+  
+
+  // Check if valve has been open for too long (timeout)
+  if (valveOpen && millis() - valveOpenTime >= 1000) {
+    closeValve();
+    //SEND SMS START
+    Serial.begin(9600);
+
+  // check for the WiFi module:
+  if (WiFi.status() == WL_NO_MODULE) {
+    Serial.println("Communication with WiFi module failed!");
+    // don't continue
+    while (true)
+      ;
+  }
+
+  String fv = WiFi.firmwareVersion();
+  if (fv < WIFI_FIRMWARE_LATEST_VERSION) {
+    Serial.println("Please upgrade the firmware");
+  }
+
+  // attempt to connect to WiFi network:
+  while (status != WL_CONNECTED) {
+    Serial.print("Attempting to connect to SSID: ");
+    Serial.println(ssid);
+    // Connect to WPA/WPA2 network. Change this line if using open or WEP network:
+    status = WiFi.begin(ssid, pass);
+
+    // wait 10 seconds for connection:
+    delay(10000);
+  }
+
+  // print your board's IP address:
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.localIP());
+
+  // connect to web server on port 80:
+  if (client.connect(HOST_NAME, HTTP_PORT)) {
+    // if connected:
+    Serial.println("Connected to server");
+    // make a HTTP request:
+    // send HTTP header
+    client.println("GET " + PATH_NAME + queryString + " HTTP/1.1");
+    client.println("Host: " + String(HOST_NAME));
+    client.println("Connection: close");
+    client.println();  // end HTTP header
+
+    while (client.connected()) {
+      if (client.available()) {
+        // read an incoming byte from the server and print it to serial monitor:
+        char c = client.read();
+        Serial.print(c);
+      }
+    }
+
+    // the server's disconnected, stop the client:
+    client.stop();
+    Serial.println();
+    Serial.println("disconnected");
+  } else {  // if not connected:
+    Serial.println("connection failed");
+  }
+
+
+    }
+
+  }
+  }
+
+  delay(100);  // Adjust delay as needed
+}
+
+void openValve() {
+  digitalWrite(valvePin, HIGH);   // Activate the valve
+  valveOpen = true;               // Update valve state
+  valveOpenTime = millis();       // Record the time when valve was opened
+  Serial.println("Valve opened");
+}
+
+void closeValve() {
+  digitalWrite(valvePin, LOW);    // Deactivate the valve
+  valveOpen = false;              // Update valve state
+  Serial.println("Valve closed");
+}
